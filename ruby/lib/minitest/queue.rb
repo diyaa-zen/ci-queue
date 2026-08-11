@@ -124,6 +124,9 @@ module Minitest
     extend ::CI::Queue::OutputHelpers
     attr_writer :run_command_formatter, :project_root
 
+    PARALLEL_WORKER_METADATA_MUTEX = Mutex.new
+    private_constant :PARALLEL_WORKER_METADATA_MUTEX
+
     def run_command_formatter
       @run_command_formatter ||= if defined?(Rails) && defined?(Rails::TestUnitRailtie)
         RAILS_RUN_COMMAND_FORMATTER
@@ -171,7 +174,14 @@ module Minitest
       attr_writer :parallel_worker_id
 
       def parallel_worker_id
-        @parallel_worker_id || parallel_worker_id_from_env
+        return @parallel_worker_id if @parallel_worker_id
+
+        # Memoized per process: re-read after a fork, but not on every test.
+        if @parallel_worker_id_env_pid != Process.pid
+          @parallel_worker_id_env_pid = Process.pid
+          @parallel_worker_id_from_env = parallel_worker_id_from_env
+        end
+        @parallel_worker_id_from_env
       end
 
       # Stamps per-process execution metadata on a result. Must be called
@@ -184,23 +194,31 @@ module Minitest
       # this in the worker before sending, otherwise the stamp applied
       # during reporting would carry the reporting process's pid and an
       # arrival-order index interleaved across workers.
+      #
+      # The counter is mutex-guarded: results recorded from multiple threads
+      # (e.g. a DRb server dispatching each call on its own thread) get
+      # unique, gap-free indexes reflecting record order in this process.
+      # Returns the result when it was stamped, nil when it was skipped.
       def stamp_parallel_worker_metadata(result)
         return unless result.respond_to?(:parallel_worker_pid=)
         return if result.parallel_worker_pid # already stamped worker-side
 
-        pid = Process.pid
-        if @parallel_worker_metadata_pid != pid
-          # Restart the per-process counter in forked workers so that
-          # (parallel_worker_id, parallel_worker_pid, parallel_worker_test_index)
-          # always reflects execution order within a single process.
-          @parallel_worker_metadata_pid = pid
-          @parallel_worker_next_test_index = 0
-        end
+        PARALLEL_WORKER_METADATA_MUTEX.synchronize do
+          pid = Process.pid
+          if @parallel_worker_metadata_pid != pid
+            # Restart the per-process counter in forked workers so that
+            # (parallel_worker_id, parallel_worker_pid, parallel_worker_test_index)
+            # always reflects execution order within a single process.
+            @parallel_worker_metadata_pid = pid
+            @parallel_worker_next_test_index = 0
+          end
 
-        result.parallel_worker_id = parallel_worker_id
-        result.parallel_worker_pid = pid
-        result.parallel_worker_test_index = @parallel_worker_next_test_index
-        @parallel_worker_next_test_index += 1
+          result.parallel_worker_id = parallel_worker_id
+          result.parallel_worker_pid = pid
+          result.parallel_worker_test_index = @parallel_worker_next_test_index
+          @parallel_worker_next_test_index += 1
+        end
+        result
       end
 
       def queue

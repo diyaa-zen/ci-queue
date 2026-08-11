@@ -8,15 +8,23 @@ module Minitest::Queue
 
     ENV_KEY = 'CI_QUEUE_PARALLEL_WORKER_ID'
 
+    STATE_IVARS = %i[
+      @parallel_worker_id
+      @parallel_worker_id_env_pid
+      @parallel_worker_id_from_env
+      @parallel_worker_metadata_pid
+      @parallel_worker_next_test_index
+    ].freeze
+
     def setup
       @original_env = ENV.delete(ENV_KEY)
-      @original_worker_id = Minitest::Queue.instance_variable_get(:@parallel_worker_id)
-      Minitest::Queue.parallel_worker_id = nil
+      @original_state = STATE_IVARS.to_h { |ivar| [ivar, Minitest::Queue.instance_variable_get(ivar)] }
+      reset_stamp_state
     end
 
     def teardown
       @original_env ? ENV[ENV_KEY] = @original_env : ENV.delete(ENV_KEY)
-      Minitest::Queue.parallel_worker_id = @original_worker_id
+      @original_state.each { |ivar, value| Minitest::Queue.instance_variable_set(ivar, value) }
     end
 
     def test_stamps_pid_and_monotonic_per_process_index
@@ -57,6 +65,18 @@ module Minitest::Queue
       assert_equal 7, test.parallel_worker_id
     end
 
+    def test_env_worker_id_is_read_once_per_process
+      ENV[ENV_KEY] = '7'
+      assert_equal 7, Minitest::Queue.parallel_worker_id
+
+      ENV[ENV_KEY] = '8'
+      assert_equal 7, Minitest::Queue.parallel_worker_id
+
+      # A forked process re-reads the environment.
+      Minitest::Queue.instance_variable_set(:@parallel_worker_id_env_pid, Process.pid - 1)
+      assert_equal 8, Minitest::Queue.parallel_worker_id
+    end
+
     def test_setter_takes_precedence_over_env
       ENV[ENV_KEY] = '7'
       Minitest::Queue.parallel_worker_id = 3
@@ -92,7 +112,21 @@ module Minitest::Queue
 
     def test_ignores_results_without_accessors
       plain = Object.new
-      Minitest::Queue.stamp_parallel_worker_metadata(plain) # does not raise
+      assert_nil Minitest::Queue.stamp_parallel_worker_metadata(plain)
+    end
+
+    def test_stamping_is_thread_safe
+      results = Array.new(100) { |i| result("test_#{i}") }
+
+      results.each_slice(20).map do |slice|
+        Thread.new do
+          slice.each { |test| Minitest::Queue.stamp_parallel_worker_metadata(test) }
+        end
+      end.each(&:join)
+
+      indexes = results.map(&:parallel_worker_test_index).sort
+      assert_equal((0...results.size).to_a, indexes)
+      assert_equal [Process.pid], results.map(&:parallel_worker_pid).uniq
     end
 
     def test_does_not_overwrite_worker_side_stamps
@@ -107,7 +141,7 @@ module Minitest::Queue
 
       before = result('test_before')
       Minitest::Queue.stamp_parallel_worker_metadata(before)
-      Minitest::Queue.stamp_parallel_worker_metadata(stamped)
+      assert_nil Minitest::Queue.stamp_parallel_worker_metadata(stamped)
       after = result('test_after')
       Minitest::Queue.stamp_parallel_worker_metadata(after)
 
@@ -117,6 +151,12 @@ module Minitest::Queue
 
       # The local per-process counter must not advance for pre-stamped results.
       assert_equal before.parallel_worker_test_index + 1, after.parallel_worker_test_index
+    end
+
+    private
+
+    def reset_stamp_state
+      STATE_IVARS.each { |ivar| Minitest::Queue.instance_variable_set(ivar, nil) }
     end
   end
 end

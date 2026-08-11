@@ -1553,7 +1553,7 @@ module Integration
       assert_equal [7], failures.map { |f| f[:parallel_worker_id] }.uniq
       assert_equal 1, failures.map { |f| f[:parallel_worker_pid] }.uniq.size
       assert_kind_of Integer, failures.first[:parallel_worker_pid]
-      assert_equal (0...failures.size).to_a, failures.map { |f| f[:parallel_worker_test_index] }.sort
+      assert_equal((0...failures.size).to_a, failures.map { |f| f[:parallel_worker_test_index] }.sort)
       # The requeued execution of ATest#test_bar ran before its final one.
       assert failures[0][:parallel_worker_test_index] < failures[1][:parallel_worker_test_index]
     end
