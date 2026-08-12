@@ -39,6 +39,7 @@ module Minitest::Queue
 
       assert result.error?
       assert_instance_of Minitest::UnexpectedError, result.failure
+      refute_nil result.time
       assert_nil example.source_location
     end
 
@@ -46,11 +47,16 @@ module Minitest::Queue
       loader = CI::Queue::FileLoader.new
       resolver = CI::Queue::ClassResolver
       example = LazySingleExample.new('MissingClass', 'test_missing', '/tmp/missing.rb', loader: loader, resolver: resolver)
+      times = [Time.at(100), Time.at(108)]
 
-      example.stub(:runnable, -> { raise LoadError, 'boom' }) do
-        result = example.run
-        assert result.error?
-        assert_instance_of Minitest::UnexpectedError, result.failure
+      CI::Queue.stub(:time_now, -> { times.shift }) do
+        example.stub(:runnable, -> { raise LoadError, 'boom' }) do
+          result = example.run
+          assert result.error?
+          assert_instance_of Minitest::UnexpectedError, result.failure
+          assert_equal 8.0, result.time
+          assert_instance_of Float, result.time
+        end
       end
     end
 
@@ -70,13 +76,17 @@ module Minitest::Queue
         loader = CI::Queue::FileLoader.new
         resolver = CI::Queue::ClassResolver
         example = LazySingleExample.new(class_name, 'test_no_longer_exists', file_path, loader: loader, resolver: resolver)
+        times = [Time.at(100), Time.at(108)]
 
         old_queue = Minitest.queue
         Minitest.queue = Struct.new(:config).new(CI::Queue::Configuration.new(skip_stale_tests: true))
 
-        result = example.run
+        result = CI::Queue.stub(:time_now, -> { times.shift }) { example.run }
 
         assert result.skipped?
+        refute_nil result.time
+        assert_equal 8.0, result.time
+        assert_instance_of Float, result.time
         assert_match(/Stale preresolved entry/, result.failure.message)
         assert_match(/test_no_longer_exists/, result.failure.message)
       ensure
