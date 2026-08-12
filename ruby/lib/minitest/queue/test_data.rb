@@ -49,7 +49,7 @@ module Minitest
       end
 
       def test_duration
-        @test.time
+        @test.time || 0.0
       end
 
       def test_start_timestamp

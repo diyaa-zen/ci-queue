@@ -520,6 +520,7 @@ module Minitest
         if result
           result.start_timestamp = start_timestamp
           result.finish_timestamp = current_timestamp
+          result.time ||= (result.finish_timestamp - result.start_timestamp).to_f
         end
       end
 

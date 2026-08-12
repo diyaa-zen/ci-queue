@@ -42,6 +42,34 @@ module Minitest::Queue
       assert_equal 42, data[:error_file_number]
     end
 
+    def test_duration_defaults_to_zero_when_the_result_has_no_time
+      test = result('test_foo')
+      test.time = nil
+
+      data = TestData.new(
+        test: test,
+        index: 0,
+        namespace: 'namespace',
+        base_path: Minitest::Queue.project_root,
+      ).to_h
+
+      assert_equal 0.0, data[:test_duration]
+      assert_instance_of Float, data[:test_duration]
+    end
+
+    def test_duration_is_preserved_when_the_result_ran
+      test = result('test_foo')
+
+      data = TestData.new(
+        test: test,
+        index: 0,
+        namespace: 'namespace',
+        base_path: Minitest::Queue.project_root,
+      ).to_h
+
+      assert_equal 0.12, data[:test_duration]
+    end
+
     def test_parallel_worker_metadata_defaults_to_nil
       test = result('test_foo')
 
