@@ -138,6 +138,57 @@ The runner also comes with a tool to investigate leaky tests:
 minitest-queue --queue path/to/test_order.log --failing-test 'SomeTest#test_something' bisect -Itest test/**/*_test.rb
 ```
 
+#### Parallel worker metadata
+
+Each result is stamped, as it is recorded in the process that ran the test, with:
+
+- `parallel_worker_pid`: the pid of the process that ran the test.
+- `parallel_worker_test_index`: a 0-based monotonic counter of results recorded by that process (requeued executions get their own index). Restarts at 0 in each forked process.
+- `parallel_worker_id`: an identifier injected by the embedding environment (e.g. a Rails parallel-testing worker number); `nil` when not applicable.
+
+All three fields are included (nil-safe) in `log/test_data.json` emitted by the test data reporter, making per-worker-process execution order reconstructable downstream (`PARTITION BY parallel_worker_id, parallel_worker_pid ORDER BY parallel_worker_test_index`).
+
+The worker id can be provided either programmatically or via the environment:
+
+```ruby
+Minitest::Queue.parallel_worker_id = 3
+```
+
+| Variable | Description |
+|---|---|
+| `CI_QUEUE_PARALLEL_WORKER_ID=N` | Sets `parallel_worker_id` for results produced by this process. Read once per process; the setter takes precedence. |
+
+Stamping is first-writer-wins. When ci-queue runs tests in-process (the normal
+`minitest-queue` flow), results are stamped automatically as they are recorded.
+Embedding environments that run tests in forked workers and transport results to
+another process (e.g. over DRb to a central reporting server) must stamp in the
+worker **before** sending:
+
+```ruby
+# in the forked worker, after running the test and before the DRb send
+Minitest::Queue.stamp_parallel_worker_metadata(result)
+```
+
+Otherwise the automatic stamp during reporting would capture the reporting
+process's pid and an arrival-order index interleaved across workers. Pre-stamped
+results pass through reporting untouched.
+
+Notes:
+
+- `parallel_worker_id` identifies a forked test process *inside* one queue worker.
+  It is unrelated to ci-queue's own `--worker` / `CI::Queue::Configuration#worker_id`,
+  which identifies the whole queue worker (typically one CI job).
+- The payload intentionally carries no build/job identity — like every other field
+  in `log/test_data.json`, scoping to a build/job (e.g. a `job_id` column making
+  `(job_id, parallel_worker_id, parallel_worker_pid)` unique across a build) is
+  expected to be attached by whatever pipeline ingests the file.
+- Stamping is mutex-guarded, so indexes are unique and gap-free even when results
+  are recorded from multiple threads. However, per-worker order reconstruction is
+  only meaningful with process-based (forked) workers: under thread-based
+  parallelization all threads share one `(parallel_worker_id, parallel_worker_pid)`
+  partition and the index reflects record order across threads.
+- This applies to minitest-queue only; rspec-queue does not emit these fields.
+
 ### RSpec [DEPRECATED]
 
 The rspec-queue runner is deprecated. The minitest-queue runner continues to be supported and is actively being improved. At Shopify, we strongly recommend that new projects set up their test suite using Minitest rather than RSpec.
