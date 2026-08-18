@@ -1,13 +1,17 @@
 # frozen_string_literal: true
 require 'test_helper'
+require 'tempfile'
 
 class CI::Queue::BisectTest < Minitest::Test
-  TEST_LIST_PATH = '/tmp/bisect-queue-test.txt'.freeze
-
   def test_config_is_public
-    config = CI::Queue::Configuration.new(failing_test: 'ATest#test_bar')
-    File.write(TEST_LIST_PATH, "ATest#test_foo\nATest#test_bar\n")
+    config = CI::Queue::Configuration.new
+    config.failing_test = 'ATest#test_bar'
 
-    assert_same(config, CI::Queue::Bisect.new(TEST_LIST_PATH, config).config)
+    Tempfile.create('test_order') do |file|
+      file.write("ATest#test_foo\nATest#test_bar\n")
+      file.flush
+
+      assert_same(config, CI::Queue::Bisect.new(file.path, config).config)
+    end
   end
 end

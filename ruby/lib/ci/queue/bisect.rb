@@ -47,8 +47,6 @@ module CI
         @tests = second_half
       end
 
-      # Public like every other queue's config (CI::Queue::Common), since consumers
-      # configure the queue while tests load.
       attr_reader :config
 
       private
