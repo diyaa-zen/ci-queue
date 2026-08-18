@@ -47,9 +47,11 @@ module CI
         @tests = second_half
       end
 
-      private
-
+      # Public like every other queue's config (CI::Queue::Common), since consumers
+      # configure the queue while tests load.
       attr_reader :config
+
+      private
 
       def slices
         @tests.each_slice((@tests.size / 2.0).ceil).to_a
