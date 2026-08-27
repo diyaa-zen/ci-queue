@@ -11,11 +11,18 @@ module CI
       self.requeue_offset = 42
 
       class Worker < Base
-        attr_reader :total
+        attr_accessor :entry_resolver
+
+        # push sets this on the leader; a subscribed worker reads what the leader wrote,
+        # because requeue's global_max_requeues(total) cannot take nil.
+        def total
+          @total ||= redis.get(key('total'))&.to_i
+        end
 
         def initialize(redis, config)
           @reserved_test = nil
           @shutdown_required = false
+          @entry_resolver = nil
           super(redis, config)
         end
 
@@ -30,8 +37,16 @@ module CI
           self
         end
 
+        # A worker that will resolve entries on demand contributes nothing to the queue and
+        # must not stand for election: winning it would push an empty queue.
+        def subscribe(entry_resolver)
+          @entry_resolver = entry_resolver
+          @master = false
+          self
+        end
+
         def populated?
-          !!defined?(@index)
+          !!defined?(@index) || !@entry_resolver.nil?
         end
 
         def shutdown!
@@ -50,7 +65,7 @@ module CI
           wait_for_master
           until shutdown_required? || config.circuit_breakers.any?(&:open?) || exhausted? || max_test_failed?
             if test = reserve
-              yield index.fetch(test)
+              yield resolve(test)
             else
               sleep 0.05
             end
@@ -141,6 +156,17 @@ module CI
         private
 
         attr_reader :index
+
+        # The eager path keeps its exact KeyError; only a subscribed worker defers.
+        def resolve(test_id)
+          if defined?(@index) && @index.key?(test_id)
+            @index.fetch(test_id)
+          elsif @entry_resolver
+            @entry_resolver.call(test_id)
+          else
+            index.fetch(test_id)
+          end
+        end
 
         def worker_id
           config.worker_id

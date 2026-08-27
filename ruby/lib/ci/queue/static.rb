@@ -16,6 +16,7 @@ module CI
       attr_reader :progress, :total
 
       def initialize(tests, config)
+        @entry_resolver = nil
         @queue = tests
         @config = config
         @progress = 0
@@ -48,6 +49,11 @@ module CI
         self
       end
 
+      def subscribe(entry_resolver)
+        @entry_resolver = entry_resolver
+        self
+      end
+
       def with_heartbeat(id)
         yield
       end
@@ -72,8 +78,18 @@ module CI
         (@created_at.to_f + TEN_MINUTES) < CI::Queue.time_now.to_f
       end
 
+      def resolve(test_id)
+        if defined?(@index) && @index.key?(test_id)
+          @index.fetch(test_id)
+        elsif @entry_resolver
+          @entry_resolver.call(test_id)
+        else
+          index.fetch(test_id)
+        end
+      end
+
       def populated?
-        !!defined?(@index)
+        !!defined?(@index) || !@entry_resolver.nil?
       end
 
       def to_a
@@ -94,7 +110,7 @@ module CI
 
       def poll
         while !@shutdown && config.circuit_breakers.none?(&:open?) && !max_test_failed? && @reserved_test = @queue.shift
-          yield index.fetch(@reserved_test)
+          yield resolve(@reserved_test)
         end
         @reserved_test = nil
       end
