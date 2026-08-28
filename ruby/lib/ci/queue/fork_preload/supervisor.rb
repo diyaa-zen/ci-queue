@@ -28,7 +28,12 @@ module CI
           $stderr.flush
         end
 
+        # Compaction packs objects densely so more is shared at the fork. The trade is that a
+        # page then holds objects from many sources, so one write privatises all of them.
+        # Off is an experiment, not a default.
         def compact_heap_for_sharing
+          return unless ENV.fetch('CI_QUEUE_FORK_COMPACT', '1') == '1'
+
           Process.warmup if Process.respond_to?(:warmup)
         end
 
