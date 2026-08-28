@@ -10,9 +10,11 @@ module CI
       class TimesReport
         ROW = "%-7s %-8s %-5s\n"
 
+        # ::File, not File: CI::Queue::File shadows it inside this namespace.
+
         def self.open(path: ForkPreload.times_report_path, &block)
-          FileUtils.mkdir_p(File.dirname(path))
-          File.open(path, 'w') do |file|
+          FileUtils.mkdir_p(::File.dirname(path))
+          ::File.open(path, 'w') do |file|
             file.printf(ROW, 'worker', 'seconds', 'exit')
             block.call(new(file))
           end
