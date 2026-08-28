@@ -3,8 +3,6 @@
 module CI
   module Queue
     module ForkPreload
-      # One forked worker: rebind whatever the application says is per-worker, then hand over
-      # to the stock run loop and exit with its verdict.
       class WorkerProcess
         def self.fork(number:, &run_worker)
           Process.fork { new(number).run(&run_worker) }

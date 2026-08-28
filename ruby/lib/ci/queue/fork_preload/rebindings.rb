@@ -3,9 +3,6 @@
 module CI
   module Queue
     module ForkPreload
-      # Process-wide state a forked worker has to take over. Each fails silently if skipped:
-      # unredirected streams interleave every worker into one file, a shared RNG makes every
-      # worker generate identical data, and SimpleCov writes nothing at all from a child.
       module Rebindings
         class << self
           def install

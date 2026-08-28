@@ -9,11 +9,6 @@ require 'ci/queue/fork_preload/rebindings'
 
 module CI
   module Queue
-    # Boot once, fork the workers. Each worker otherwise pays the whole boot again, and the
-    # pages they would have shared are instead copied N times.
-    #
-    # The mechanism is here; what has to be quiesced before the fork and rebound after it is
-    # application knowledge, so it comes in through the hooks below rather than being guessed.
     module ForkPreload
       class << self
         attr_writer :times_report_path, :log_dir, :worker_env_var
@@ -38,18 +33,14 @@ module CI
           @worker_env_var ||= 'TEST_ENV_NUMBER'
         end
 
-        # Runs in the parent, before the fork: close what must not be shared across it.
         def before_fork(&block)
           before_fork_hooks << block
         end
 
-        # Runs in each child, before it takes any work. Yielded the worker number.
         def after_fork(&block)
           after_fork_hooks << block
         end
 
-        # Runs in the parent once the children exist. The parent accumulated boot state that
-        # the children now own copies of; anything it must not also write belongs here.
         def after_fork_in_parent(&block)
           after_fork_in_parent_hooks << block
         end

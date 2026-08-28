@@ -3,8 +3,6 @@
 module CI
   module Queue
     module ForkPreload
-      # Parent-side lifecycle: quiesce, compact, fork, forward signals, reap, report.
-      # Never touches the queue and never runs a test.
       class Supervisor
         def initialize(worker_count: ForkPreload.worker_count)
           @worker_count = worker_count
@@ -28,9 +26,6 @@ module CI
           $stderr.flush
         end
 
-        # Compaction packs objects densely so more is shared at the fork. The trade is that a
-        # page then holds objects from many sources, so one write privatises all of them.
-        # Off is an experiment, not a default.
         def compact_heap_for_sharing
           return unless ENV.fetch('CI_QUEUE_FORK_COMPACT', '1') == '1'
 

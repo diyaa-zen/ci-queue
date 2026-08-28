@@ -10,12 +10,6 @@ require 'ci/queue/lazy_load/static_extension'
 
 module CI
   module Queue
-    # Workers hold an id-to-live-object index so poll can hand back a runnable test, which is
-    # why every worker has to load every test file before it can take any work. A worker that
-    # resolves an id when it is handed one needs only the files it is actually given.
-    #
-    # Requiring this file installs the seam but changes nothing: with the flag unset every
-    # override falls straight through to super.
     module LazyLoad
       class FileLoadError < CI::Queue::Error
         attr_reader :file_path, :original_error
@@ -29,8 +23,6 @@ module CI
       end
 
       class << self
-        # The runner supplies this, because only it knows how to turn one of its own test ids
-        # back into something runnable.
         attr_accessor :index_builder
 
         def enabled?

@@ -3,8 +3,6 @@
 module CI
   module Queue
     module ForkPreload
-      # Optional: require this only in a Rails app.
-      #
       # Database names interpolate the worker number at YAML-parse time, so every pool the
       # parent built points at worker 1's databases. connects_to per owner is the API that
       # replaces all of an owner's roles together; a handler-level establish_connection
