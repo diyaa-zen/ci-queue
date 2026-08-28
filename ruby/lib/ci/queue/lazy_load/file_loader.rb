@@ -4,7 +4,10 @@ require 'set'
 
 module CI
   module Queue
-    class FileLoader
+    module LazyLoad
+      # Upstream v0.98.0's ci/queue/file_loader.rb, re-nested under LazyLoad. Generic, touches
+      # no redis, and fork-aware, which is what lets it coexist with fork-preload.
+      class FileLoader
       attr_reader :load_stats
 
       def initialize
@@ -98,4 +101,5 @@ module CI
       end
     end
   end
+end
 end

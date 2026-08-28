@@ -1,7 +1,6 @@
 # frozen_string_literal: true
 require 'fileutils'
 require 'delegate'
-require 'set'
 require 'rspec/core'
 require 'ci/queue'
 require 'rspec/queue/build_status_recorder'
@@ -13,22 +12,7 @@ module RSpec
       def config
         @config ||= CI::Queue::Configuration.from_env(ENV)
       end
-
-      def lazy_load?
-        ENV['CI_QUEUE_LAZY_LOAD'] == '1'
-      end
     end
-
-    # Spec files are what cost the memory; the helpers named by .rspec --require are loaded
-    # through a different path and still boot the app, its suite hooks and its factories.
-    module ConfigurationLazyLoad
-      def load_spec_files
-        return if RSpec::Queue.lazy_load?
-
-        super
-      end
-    end
-    Core::Configuration.prepend(ConfigurationLazyLoad)
 
     module RunnerHelpers
       private
@@ -285,49 +269,6 @@ module RSpec
       end
     end
 
-    class LazyIndex
-      ID_LOCATION = /\[[\d:]+\]\z/
-
-      def initialize(loader: CI::Queue::FileLoader.new)
-        @loader = loader
-        @examples = {}
-        @absorbed_groups = Set.new
-      end
-
-      def call(test_id)
-        known = @examples[test_id]
-        return known if known
-
-        @loader.load_file(file_for(test_id))
-        absorb_new_example_groups
-        @examples.fetch(test_id)
-      end
-
-      def load_stats
-        @loader.load_stats
-      end
-
-      private
-
-      def file_for(test_id)
-        test_id.sub(ID_LOCATION, '')
-      end
-
-      # Loading a file appends its top-level groups to the world, so only the roots we have
-      # not walked yet can hold new examples.
-      def absorb_new_example_groups
-        RSpec.world.example_groups.each do |root|
-          next unless @absorbed_groups.add?(root.object_id)
-
-          root.descendants.each do |group|
-            group.filtered_examples.each do |example|
-              @examples[example.id] = SingleExample.new(group, example)
-            end
-          end
-        end
-      end
-    end
-
     class ReportRunner
       include RunnerHelpers
       include CI::Queue::OutputHelpers
@@ -449,11 +390,7 @@ module RSpec
         end
 
         BuildStatusRecorder.build = queue.build
-        if RSpec::Queue.lazy_load?
-          queue.subscribe(LazyIndex.new)
-        else
-          queue.populate(examples, random: ordering_seed, &:id)
-        end
+        queue.populate(examples, random: ordering_seed, &:id)
         examples_count = examples.size # TODO: figure out which stub value would be best
         success = true
         @configuration.reporter.report(examples_count) do |reporter|
